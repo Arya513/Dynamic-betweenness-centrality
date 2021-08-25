@@ -5,16 +5,17 @@ import networkx as nx
 
 # version of the algorithm where only insertion of edges is allowed
 def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
-    # add egde
-    G.add_edge(from_, to_)
+    # add egde -> make new graph
+    G_with_added_edge = G.copy()
+    G_with_added_edge.add_edge(from_, to_)
 
     # get list of biconnected components in a list
     # this has to be done after edge insertion (in case two biconnected components merge into one)
-    biconnected_components = list(nx.biconnected_components(G))
+    biconnected_components = list(nx.biconnected_components(G_with_added_edge))
 
     # these edges are needed to determine which biconnected component is affected
     # in other words - to find to which biconnected component the inserted edge belongs to
-    biconnected_components_edges = list(nx.biconnected_component_edges(G))
+    biconnected_components_edges = list(nx.biconnected_component_edges(G_with_added_edge))
 
     # find index of affected component
     index_of_affected_biconnected_component: int
@@ -22,17 +23,17 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
         if (from_, to_) in edges_of_component or (to_, from_) in edges_of_component:
             index_of_affected_biconnected_component = i
 
-    # the added edge is temporary removed for the first part of the iCentral algorithm
-    G.remove_edge(from_, to_)
+    # get subgraph of affected biconnected component without added edge
+    Be_subgraph_without_edge = G.subgraph(biconnected_components[index_of_affected_biconnected_component])
 
-    # get subgraph of affected biconnected component
-    Be_subgraph = G.subgraph(biconnected_components[index_of_affected_biconnected_component])
+    # get subgraph of affected biconnected component with added edge
+    Be_subgraph_with_edge = G_with_added_edge.subgraph(biconnected_components[index_of_affected_biconnected_component])
 
     # TODO: not sure how this part would work in directed graphs
     # we make two BFS' within affected component - one starting from from_ node, the other starting from to_
     # we keep the distances from the source node in the two dictionaries below
-    bfs1 = bfs_counting_hops(Be_subgraph, from_)
-    bfs2 = bfs_counting_hops(Be_subgraph, to_)
+    bfs1 = bfs_counting_hops(Be_subgraph_without_edge, from_)
+    bfs2 = bfs_counting_hops(Be_subgraph_without_edge, to_)
 
     # we create the set q
     q = set()
@@ -52,7 +53,7 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
         # sigma_s - the starting node is s and the target nodes (t) are all nodes IN Be
         # predecessors_s - predecessors of a node on the shortest path between s (source) and current node (t)
         # we want to count how many shortest paths are between s and t
-        for t in Be_subgraph.nodes:
+        for t in Be_subgraph_without_edge.nodes:
             sigma_s[t] = len(list(nx.algorithms.shortest_paths.generic.all_shortest_paths(G, source=s, target=t)))
 
             # TODO: extend for directed graphs
@@ -63,12 +64,12 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
         delta_s = dict()
         delta_Gs = dict()
 
-        for v in Be_subgraph.nodes:
+        for v in Be_subgraph_without_edge.nodes:
             delta_Gs[v] = 0
             delta_s[v] = 0
 
         # get nodes in reverse BFS order from source node s
-        nodes_in_reverse_bfs_order = get_reverse_BFS_order(Be_subgraph, s)
+        nodes_in_reverse_bfs_order = get_reverse_BFS_order(Be_subgraph_without_edge, s)
 
         # TODO: check if reverse BFS order excludes s
         # nodes_in_reverse_bfs_order.remove(s)
@@ -96,8 +97,6 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
                 bc[w] = bc[w] - float(delta_Gs[w]) / 2.0
 
         # PART 2 (lines 26 - 40 of pseudocode)
-        G.add_edge(from_, to_)
-        Be_subgraph = G.subgraph(biconnected_components[index_of_affected_biconnected_component])
 
         # create sigma_s2 and predecessors_s2 (exactly the same as in the first part of the algorithm - the only
         # difference is the added edge)
@@ -107,33 +106,37 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
         # sigma_s2 - the starting node is s and the target nodes (t) are all nodes IN Be' (Be' == Be for vertices)
         # predecessors_s2 - predecessors of a node on shortest path between s (source) and current node (t)
         # we want to count how many shortest paths are between s and t
-        for t in Be_subgraph.nodes:
-            sigma_s2[t] = len(list(nx.algorithms.shortest_paths.generic.all_shortest_paths(G, source=s, target=t)))
+        for t in Be_subgraph_with_edge.nodes:
+            sigma_s2[t] = len(list(nx.algorithms.shortest_paths.generic.all_shortest_paths(G_with_added_edge,
+                                                                                           source=s,
+                                                                                           target=t)))
 
             # TODO: extend for directed graphs
             # TODO: check if s is included as predecessors
-            predecessors_s2[t] = nx.algorithms.shortest_paths.unweighted.predecessor(G, source=s, target=t)
+            predecessors_s2[t] = nx.algorithms.shortest_paths.unweighted.predecessor(G_with_added_edge,
+                                                                                     source=s,
+                                                                                     target=t)
 
         # initialize delta_s2(v) and delta_Gs2(v)
         delta_s2 = dict()
         delta_Gs2 = dict()
 
-        for v in Be_subgraph.nodes:
+        for v in Be_subgraph_with_edge.nodes:
             delta_Gs2[v] = 0
             delta_s2[v] = 0
 
         # get nodes in reverse BFS order from source node s
-        nodes_in_reverse_bfs_order = get_reverse_BFS_order(Be_subgraph, s)
+        nodes_in_reverse_bfs_order = get_reverse_BFS_order(Be_subgraph_with_edge, s)
 
         # TODO: check if reverse BFS order excludes s
         # nodes_in_reverse_bfs_order.remove(s)
 
         for w in nodes_in_reverse_bfs_order:
             if s in articulation_points and w in articulation_points:
-                delta_Gs2[w] = get_cardinality_of_Gi(G, s,
+                delta_Gs2[w] = get_cardinality_of_Gi(G_with_added_edge, s,
                                                      biconnected_components[
                                                          index_of_affected_biconnected_component]) * \
-                               get_cardinality_of_Gi(G, w,
+                               get_cardinality_of_Gi(G_with_added_edge, w,
                                                      biconnected_components[
                                                          index_of_affected_biconnected_component])
 
@@ -147,7 +150,7 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
                 bc[w] = bc[w] + float(delta_s2[w]) / 2.0
 
             if s in articulation_points:
-                bc[w] = bc[w] + delta_s2[w] * get_cardinality_of_Gi(G, s,
+                bc[w] = bc[w] + delta_s2[w] * get_cardinality_of_Gi(G_with_added_edge, s,
                                                                     biconnected_components[
                                                                         index_of_affected_biconnected_component])
                 bc[w] = bc[w] + float(delta_Gs2[w]) / 2.0
