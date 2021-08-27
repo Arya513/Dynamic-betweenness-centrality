@@ -1,4 +1,5 @@
 import networkx as nx
+import matplotlib.pyplot as plt
 
 
 # TODO: check restrictions s != v != t when calculating A, B, C, A', B' and C'
@@ -14,7 +15,7 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
     biconnected_components = list(nx.biconnected_components(G_with_added_edge))
 
     # these edges are needed to determine which biconnected component is affected
-    # in other words - to find to which biconnected component the inserted edge belongs to
+    # in other words - to find which biconnected component the inserted edge belongs to
     biconnected_components_edges = list(nx.biconnected_component_edges(G_with_added_edge))
 
     # find index of affected component
@@ -22,6 +23,7 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
     for i, edges_of_component in enumerate(biconnected_components_edges):
         if (from_, to_) in edges_of_component or (to_, from_) in edges_of_component:
             index_of_affected_biconnected_component = i
+            break
 
     # get subgraph of affected biconnected component without added edge
     Be_subgraph_without_edge = G.subgraph(biconnected_components[index_of_affected_biconnected_component])
@@ -42,7 +44,7 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
             q.add(node)
 
     # get articulation points
-    articulation_points = list(nx.algorithms.components.articulation_points(G))
+    articulation_points = list(nx.algorithms.components.articulation_points(G_with_added_edge))
 
     # PART 1 (lines 11 - 25 of pseudocode)
     for s in q:
@@ -55,10 +57,12 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
         # we want to count how many shortest paths are between s and t
         for t in Be_subgraph_without_edge.nodes:
             sigma_s[t] = len(list(nx.algorithms.shortest_paths.generic.all_shortest_paths(G, source=s, target=t)))
+            # sigma_s[t] = node_occurrence_on_shortest_paths(G, s, t)
 
             # TODO: extend for directed graphs
-            # TODO: check if s is included as predecessor
             predecessors_s[t] = nx.algorithms.shortest_paths.unweighted.predecessor(G, source=s, target=t)
+
+        sigma_s[s] = 0
 
         # initialize delta_s(v) and delta_Gs(v)
         delta_s = dict()
@@ -71,9 +75,6 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
         # get nodes in reverse BFS order from source node s
         nodes_in_reverse_bfs_order = get_reverse_BFS_order(Be_subgraph_without_edge, s)
 
-        # TODO: check if reverse BFS order excludes s
-        # nodes_in_reverse_bfs_order.remove(s)
-
         for w in nodes_in_reverse_bfs_order:
             if s in articulation_points and w in articulation_points:
                 delta_Gs[w] = get_cardinality_of_Gi(G, s,
@@ -82,10 +83,16 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
                                                     biconnected_components[index_of_affected_biconnected_component])
 
             for p in predecessors_s[w]:
-                delta_s[p] = delta_s[p] + float(sigma_s[p]) / float(sigma_s[w]) * (1 + delta_s[w])
+                try:
+                    delta_s[p] = delta_s[p] + (float(sigma_s[p]) / float(sigma_s[w])) * (1 + delta_s[w])
+                except ZeroDivisionError:
+                    pass
 
                 if s in articulation_points:
-                    delta_Gs[p] = delta_Gs[p] + delta_Gs[w] * float(sigma_s[p]) / float(sigma_s[w])
+                    try:
+                        delta_Gs[p] = delta_Gs[p] + delta_Gs[w] * (float(sigma_s[p]) / float(sigma_s[w]))
+                    except ZeroDivisionError:
+                        pass
 
             if w != s:
                 bc[w] = bc[w] - float(delta_s[w]) / 2.0
@@ -111,11 +118,14 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
                                                                                            source=s,
                                                                                            target=t)))
 
+            sigma_s2[t] = node_occurrence_on_shortest_paths(G_with_added_edge, s, t)
+
             # TODO: extend for directed graphs
-            # TODO: check if s is included as predecessors
             predecessors_s2[t] = nx.algorithms.shortest_paths.unweighted.predecessor(G_with_added_edge,
                                                                                      source=s,
                                                                                      target=t)
+
+        sigma_s2[s] = 0
 
         # initialize delta_s2(v) and delta_Gs2(v)
         delta_s2 = dict()
@@ -128,9 +138,6 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
         # get nodes in reverse BFS order from source node s
         nodes_in_reverse_bfs_order = get_reverse_BFS_order(Be_subgraph_with_edge, s)
 
-        # TODO: check if reverse BFS order excludes s
-        # nodes_in_reverse_bfs_order.remove(s)
-
         for w in nodes_in_reverse_bfs_order:
             if s in articulation_points and w in articulation_points:
                 delta_Gs2[w] = get_cardinality_of_Gi(G_with_added_edge, s,
@@ -141,10 +148,16 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
                                                          index_of_affected_biconnected_component])
 
             for p in predecessors_s2[w]:
-                delta_s2[p] = delta_s2[p] + float(sigma_s2[p]) / float(sigma_s2[w]) * (1 + delta_s2[w])
+                try:
+                    delta_s2[p] = delta_s2[p] + (float(sigma_s2[p]) / float(sigma_s2[w])) * (1 + delta_s2[w])
+                except ZeroDivisionError:
+                    pass
 
                 if s in articulation_points:
-                    delta_Gs2[p] = delta_Gs2[p] + delta_Gs2[w] * float(sigma_s2[p]) / float(sigma_s2[w])
+                    try:
+                        delta_Gs2[p] = delta_Gs2[p] + delta_Gs2[w] * (float(sigma_s2[p]) / float(sigma_s2[w]))
+                    except ZeroDivisionError:
+                        pass
 
             if w != s:
                 bc[w] = bc[w] + float(delta_s2[w]) / 2.0
@@ -156,6 +169,21 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
                 bc[w] = bc[w] + float(delta_Gs2[w]) / 2.0
 
     return bc
+
+
+def node_occurrence_on_shortest_paths(G: nx.Graph, s: int, v: int):
+    count = 0
+
+    for t in G.nodes:
+        all_shortest_paths = list(nx.algorithms.shortest_paths.generic.all_shortest_paths(G, source=s, target=t))
+        for path in all_shortest_paths:
+            if v == t or v == s or s == t:
+                continue
+
+            if v in path:
+                count += 1
+
+    return count
 
 
 # get number of nodes in subgraph connected to Be via articulation point a
@@ -258,6 +286,21 @@ def make_graph() -> nx.Graph:
     return G
 
 
+def make_graph_smaller_example() -> nx.Graph:
+    G = nx.Graph()
+    G.add_nodes_from(range(1, 8))
+    G.add_edge(1, 2)
+    G.add_edge(2, 3)
+    G.add_edge(1, 3)
+    G.add_edge(2, 4)
+    G.add_edge(4, 5)
+    G.add_edge(5, 6)
+    G.add_edge(6, 7)
+    G.add_edge(7, 4)
+
+    return G
+
+
 def main():
     G = make_graph()
 
@@ -276,5 +319,18 @@ def main():
         print(f"{k}: {v}")
 
 
+def example():
+    H = make_graph_smaller_example()
+
+    bc = nx.betweenness_centrality(H)
+    bc_incremental = icentral_incremental(H, 4, 6, bc.copy())
+    H.add_edge(4, 6)
+    bc_brandes = nx.betweenness_centrality(H)
+
+    for k in bc.keys():
+        print(f"{k}: {bc[k]} -> {bc_brandes[k]} <-> {bc_incremental[k]}")
+
+
 if __name__ == '__main__':
-    main()
+    # main()
+    example()
