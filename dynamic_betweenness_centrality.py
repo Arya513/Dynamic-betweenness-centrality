@@ -57,7 +57,6 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
         # we want to count how many shortest paths are between s and t
         for t in Be_subgraph_without_edge.nodes:
             sigma_s[t] = len(list(nx.algorithms.shortest_paths.generic.all_shortest_paths(G, source=s, target=t)))
-            # sigma_s[t] = node_occurrence_on_shortest_paths(G, s, t)
 
             # TODO: extend for directed graphs
             predecessors_s[t] = nx.algorithms.shortest_paths.unweighted.predecessor(G, source=s, target=t)
@@ -118,8 +117,6 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
                                                                                            source=s,
                                                                                            target=t)))
 
-            sigma_s2[t] = node_occurrence_on_shortest_paths(G_with_added_edge, s, t)
-
             # TODO: extend for directed graphs
             predecessors_s2[t] = nx.algorithms.shortest_paths.unweighted.predecessor(G_with_added_edge,
                                                                                      source=s,
@@ -169,21 +166,6 @@ def icentral_incremental(G: nx.Graph, from_: int, to_: int, bc: dict) -> dict:
                 bc[w] = bc[w] + float(delta_Gs2[w]) / 2.0
 
     return bc
-
-
-def node_occurrence_on_shortest_paths(G: nx.Graph, s: int, v: int):
-    count = 0
-
-    for t in G.nodes:
-        all_shortest_paths = list(nx.algorithms.shortest_paths.generic.all_shortest_paths(G, source=s, target=t))
-        for path in all_shortest_paths:
-            if v == t or v == s or s == t:
-                continue
-
-            if v in path:
-                count += 1
-
-    return count
 
 
 # get number of nodes in subgraph connected to Be via articulation point a
@@ -307,8 +289,8 @@ def main():
     G_added_edge = make_graph()
     G_added_edge.add_edge(4, 8)
 
-    bc_brandes = nx.betweenness_centrality(G_added_edge)
-    bc_incentral = icentral_incremental(G, 4, 8, nx.betweenness_centrality(G))
+    bc_brandes = nx.betweenness_centrality(G_added_edge, normalized=False)
+    bc_incentral = icentral_incremental(G, 4, 8, nx.betweenness_centrality(G, normalized=False))
 
     # for node in bc_incentral.keys():
     #    if bc_brandes[node] != bc_incentral[node]:
@@ -316,21 +298,21 @@ def main():
     #        break
 
     for k, v in bc_incentral.items():
-        print(f"{k}: {v}")
+        print(f"{k}: {v} <-> {bc_brandes[k]}")
 
 
 def example():
     H = make_graph_smaller_example()
 
-    bc = nx.betweenness_centrality(H)
+    bc = nx.betweenness_centrality(H, normalized=False)
     bc_incremental = icentral_incremental(H, 4, 6, bc.copy())
     H.add_edge(4, 6)
-    bc_brandes = nx.betweenness_centrality(H)
+    bc_brandes = nx.betweenness_centrality(H, normalized=False)
 
     for k in bc.keys():
         print(f"{k}: {bc[k]} -> {bc_brandes[k]} <-> {bc_incremental[k]}")
 
 
 if __name__ == '__main__':
-    # main()
-    example()
+    main()
+    # example()
